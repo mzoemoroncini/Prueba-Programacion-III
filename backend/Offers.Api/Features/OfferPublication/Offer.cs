@@ -10,6 +10,12 @@ public sealed class Offer
     public required string SourceUrl { get; set; }
     [MaxLength(512)]
     public string? SourceOfferId { get; set; }
+    [MaxLength(80)]
+    public string? CaptureSourceId { get; set; }
+    [MaxLength(64)]
+    public string? ExtractionKey { get; set; }
+    [MaxLength(512)]
+    public string? OriginalTitle { get; set; }
     public string? OriginalDescription { get; set; }
     public string? Summary { get; set; }
     public string? OriginalConditions { get; set; }

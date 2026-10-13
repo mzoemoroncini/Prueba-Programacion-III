@@ -43,7 +43,7 @@ Las carpetas de features reservan los cinco flujos acordados: captación, public
 
 ## Pendiente
 
-El modelo de ofertas, el contexto EF Core y la migración InitialOffers están preparados. La migración se aplicó a una instancia MySQL 8.4.11 local de desarrollo en este entorno. Reportes, métricas de uso e integración IA siguen pendientes.
+El modelo de ofertas, el contexto EF Core y la migración InitialOffers están preparados. La migración se aplicó a una instancia MySQL 8.4.11 local de desarrollo en este entorno. Reportes y métricas de uso siguen pendientes. La integración IA está implementada, pero no está activada ni validada con un proveedor real.
 
 Consultar `CONVENTIONS.md` antes de agregar funcionalidades.
 
@@ -62,7 +62,8 @@ dotnet tool install dotnet-ef --version 10.0.9 --tool-path .tools/ef
 Con un servidor MySQL 8 disponible y la conexión configurada, aplicar la migración explícitamente:
 
 ```bash
-.tools/ef/dotnet-ef database update --project backend/Offers.Api
+.tools/ef/dotnet-ef database update --context OffersDbContext --project backend/Offers.Api
+.tools/ef/dotnet-ef database update --context CaptureDbContext --project backend/Offers.Api
 ```
 
 En Windows, usar el ejecutable equivalente de `.tools/ef`. Si se usa el SDK instalado dentro del proyecto, incluir `.tools/dotnet` en PATH y definir DOTNET_ROOT a esa carpeta antes de ejecutar la herramienta.
@@ -101,7 +102,7 @@ dotnet run --project backend/Offers.Checks
 
 Sin configuración ejecuta los checks de estado, límites de vigencia y fecha argentina. Para probar MySQL y HTTP, configurar `ConnectionStrings__Offers` y `OFFERS_CHECKS_API_URL` apuntando a una API activa con la misma base. Ejecutar solo contra una base de desarrollo: crea ofertas de prueba temporales y las elimina al finalizar.
 
-Se verificaron las reglas, la lectura de varios beneficios y decimales, códigos, fechas y la exclusión del detalle para ofertas no disponibles contra MySQL real. No se consideran cerradas la extracción IA, los reportes ni las métricas de consultas/clics.
+Se verificaron las reglas, la lectura de varios beneficios y decimales, códigos, fechas y la exclusión del detalle para ofertas no disponibles contra MySQL real. La extracción real con IA requiere configurar una clave y un modelo y validar sus resultados. Reportes y métricas de consultas/clics siguen pendientes.
 
 ## Administración de publicaciones
 
@@ -121,3 +122,51 @@ La sesión utiliza una cookie HttpOnly con SameSite Strict y duración absoluta 
 Para HTTP local usar `ASPNETCORE_ENVIRONMENT=Development`. Fuera de desarrollo las cookies requieren HTTPS. Las claves de protección de cookies se guardan en `.local/keys` bajo el directorio de ejecución y se excluyen de Git; conservarlas de forma privada si se necesita mantener sesiones entre reinicios.
 
 Las pruebas de integración también verifican accesos sin sesión, credenciales incorrectas, CSRF, publicación, desactivación, rechazo de enlaces inválidos y cierre de sesión. Para ejecutar esa parte, proporcionar las mismas variables administrativas a la API y a Offers.Checks.
+
+## Captación automática y reprocesamiento
+
+La API incluye un proceso periódico (24 horas por defecto) y las acciones protegidas Leer fuentes ahora y Volver a leer la fuente de una oferta. Las ejecuciones registran fuente, inicio, finalización, etapa, resultado, cantidad procesada y error. CaptureDbContext es dueño de CaptureRuns y utiliza su propio historial de migraciones; ExtractedOfferWriter es la operación de publicaciones utilizada por captación para guardar ofertas.
+
+Las fuentes iniciales están en `backend/Offers.Api/appsettings.json`. Se consultan páginas públicas oficiales, sin sesiones de consumidores ni selección automática de ubicación. Se obtiene texto renderizado, una captura de la página para lectura visual/OCR y hasta tres PDF enlazados en dominios oficiales. Las fechas relativas permanecen en las condiciones; no se convierten en fechas inventadas.
+
+El adaptador usa OpenAI Responses con esquema JSON estricto, entrada de imágenes y archivos PDF. Las fuentes se tratan como datos, no como instrucciones. Se rechazan respuestas incompletas, clasificaciones inciertas, valores inválidos y enlaces que no estén presentes en la lectura. Las ofertas nuevas quedan Pending. Una modificación de una oferta Published vuelve a Pending; Disabled se conserva. Una fuente sin ofertas o una lectura fallida no elimina registros anteriores.
+
+La identidad usa la fuente configurada y el identificador publicado cuando existe; de lo contrario, el título original normalizado. Se detectan colisiones dentro de una lectura y hay un índice único en MySQL. Si la fuente cambia su identificador o su título sin un identificador estable, la correspondencia puede requerir revisión: no se implementa deduplicación semántica avanzada.
+
+### Activación
+
+Definir en el entorno privado de la API:
+
+- `Capture__Enabled=true`.
+- `Capture__ApiKey`: clave de API del proveedor, nunca en Git ni en el frontend.
+- `Capture__Model`: identificador de un modelo compatible con imágenes, PDF y Structured Outputs.
+- `Capture__IntervalHours`: intervalo de 1 a 168 horas; valor inicial 24.
+
+No hay clave ni modelo predeterminados. Sin ambos y sin habilitación explícita no se hacen llamadas de IA. La clave de API no se obtiene de la sesión de ChatGPT.
+
+Chromium debe estar instalado para la lectura renderizada. Después de compilar, instalarlo con el script de Playwright generado, indicando una carpeta de navegadores local al proyecto:
+
+```powershell
+$env:PLAYWRIGHT_BROWSERS_PATH = "$PWD/.tools/browsers"
+pwsh backend/Offers.Api/bin/Debug/net10.0/playwright.ps1 install chromium --only-shell
+```
+
+También puede configurarse `Capture__BrowserExecutablePath` con la ruta de un Chromium compatible ya instalado. Si se utiliza un Node propio para el driver, configurar `PLAYWRIGHT_NODEJS_PATH`. En este entorno Chromium quedó instalado dentro de `.tools/chromium`; esos binarios no se suben a Git. `Capture__ProxyServer` es opcional para entornos con proxy.
+
+La lectura del navegador canaliza descargas GET/HEAD por el cliente HTTP, restringe URLs a HTTPS y bloquea destinos privados fuera de los dominios oficiales/configurados. No envía formularios ni pedidos y no ejecuta consultas POST de sitios externos. Algunas promociones que requieran sesión, ubicación, interacciones o APIs POST pueden no estar accesibles; deben aparecer como lectura incierta o error y necesitan validación con la fuente.
+
+### Verificación realizada y límites
+
+- Backend y React compilan.
+- La lectura en navegador obtuvo texto y capturas de las tres fuentes oficiales seleccionadas.
+- Se verificó el contrato del adaptador con respuestas simuladas, incluidos los campos de entrada para imagen/PDF y rechazo de salida incompleta.
+- Se probó contra MySQL el flujo de captación con fuentes y proveedor controlados, sin duplicados, conservación de Disabled, revisión de cambios publicados y registro de fallos.
+- No se hicieron llamadas pagas de IA. No se validaron todavía la precisión del OCR ni la cobertura de promociones de un modelo real. El catálogo no contiene ofertas reales extraídas.
+
+Para repetir las lecturas externas, con Chromium configurado y acceso de red:
+
+```bash
+OFFERS_CHECKS_LIVE_SOURCES=true dotnet run --project backend/Offers.Checks
+```
+
+La ejecución ordinaria de Offers.Checks no llama a la API real de IA. Las verificaciones MySQL usan únicamente una base de desarrollo y eliminan sus fixtures al finalizar.

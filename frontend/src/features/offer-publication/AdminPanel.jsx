@@ -26,16 +26,33 @@ export default function AdminPanel() {
   const [selected, setSelected] = useState(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [capture, setCapture] = useState(null);
+  const [runs, setRuns] = useState([]);
   async function checkSession() {
     setAuth('checking'); setMessage('');
     try { await request('/api/admin/session'); setAuth('signed-in'); }
     catch (error) { setAuth(error.status === 401 ? 'anonymous' : 'error'); if (error.status !== 401) setMessage(error.message); }
   }
   useEffect(() => { checkSession(); }, []);
-  useEffect(() => { if (auth === 'signed-in') loadOffers(); }, [auth]);
+  useEffect(() => { if (auth === 'signed-in') { loadOffers(); loadCapture(); } }, [auth]);
   function handleError(error) {
     setMessage(error.message);
     if (error.status === 401) { setAuth('anonymous'); setOffers(null); setSelected(null); }
+  }
+  async function loadCapture() {
+    try {
+      const [status, history] = await Promise.all([request('/api/admin/capture/status'), request('/api/admin/capture/runs')]);
+      setCapture(status); setRuns(history);
+    } catch (error) { handleError(error); }
+  }
+  async function readSource(offerId) {
+    setBusy(true); setMessage('Leyendo fuentes. Esto puede tardar unos minutos…');
+    try {
+      const result = await mutate(offerId ? `/api/admin/offers/${offerId}/reread` : '/api/admin/capture/run');
+      await loadOffers(); await loadCapture();
+      if (offerId) setSelected(await request(`/api/admin/offers/${offerId}`));
+      setMessage(result.some(run => run.status === 'Failed') ? 'La lectura terminó con errores. Revisá el registro.' : 'Lectura completada. Las ofertas nuevas quedan pendientes de revisión.');
+    } catch (error) { handleError(error); } finally { setBusy(false); }
   }
   async function loadOffers() {
     setOffers(null);
@@ -74,6 +91,15 @@ export default function AdminPanel() {
       <button disabled={busy} type="submit">{busy ? 'Ingresando…' : 'Iniciar sesión'}</button>
     </form>}
     {auth === 'signed-in' && <>
+      <section className="notice" aria-label="Lectura automática">
+        <h2>Lectura con IA</h2><p>{capture?.message || 'Consultando configuración de lectura…'}</p>
+        <button disabled={busy || !capture?.configured} onClick={() => readSource(null)}>Leer fuentes ahora</button>
+        {runs.length > 0 && <details><summary>Últimas lecturas y errores</summary><ul>{runs.map(run => <li key={run.id}>
+          <strong>{run.sourceId}</strong> · {run.status === 'Succeeded' ? 'Completada' : run.status === 'Failed' ? 'Fallida' : 'En curso'} · {run.stage}
+          {run.error && <p>{run.error}</p>}
+          <p>{run.offerCount} ofertas procesadas · {new Date(/(Z|[+-]\d{2}:\d{2})$/.test(run.startedAt) ? run.startedAt : run.startedAt + 'Z').toLocaleString('es-AR')}</p>
+        </li>)}</ul></details>}
+      </section>
       <div className="admin-actions"><button disabled={busy} onClick={logout}>Cerrar sesión</button><button disabled={busy} onClick={loadOffers}>Actualizar listado</button></div>
       {offers === null && !message && <p role="status">Cargando publicaciones…</p>}
       {offers?.length === 0 && <p className="notice">Todavía no hay ofertas extraídas para revisar.</p>}
@@ -84,6 +110,7 @@ export default function AdminPanel() {
       {selected && <section aria-label="Revisión de la oferta">
         <p>Estado: <strong>{states[selected.status]}</strong></p><OfferDetail offer={selected.detail} />
         <div className="admin-actions">
+          {selected.captureSourceId && <button disabled={busy || !capture?.configured} onClick={() => readSource(selected.detail.id)}>Volver a leer la fuente</button>}
           {selected.status !== 'Published' && <button disabled={busy} onClick={() => changeStatus('publish')}>Publicar oferta</button>}
           {selected.status !== 'Disabled' && <button className="danger" disabled={busy} onClick={() => changeStatus('disable')}>Desactivar oferta</button>}
         </div>

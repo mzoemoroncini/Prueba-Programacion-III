@@ -33,7 +33,7 @@ public static class AdminOfferEndpoints
             if (db is null) return Unavailable();
             var offer = await db.Offers.AsNoTracking().Include(x => x.Benefits).SingleOrDefaultAsync(x => x.Id == id, token);
             if (offer is null) return Results.NotFound();
-            return Results.Ok(new { Status = offer.Status.ToString(), Detail = OfferBrowsingEndpoints.ToDetailDto(offer) });
+            return Results.Ok(new { Status = offer.Status.ToString(), offer.CaptureSourceId, offer.LastExtractedAt, Detail = OfferBrowsingEndpoints.ToDetailDto(offer) });
         });
         group.MapPost("/{id:guid}/publish", async (Guid id, HttpContext http, CancellationToken token) =>
         {

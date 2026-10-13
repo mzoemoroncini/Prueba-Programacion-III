@@ -25,6 +25,10 @@ namespace Offers.Api.Features.OfferPublication.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
+                    b.Property<string>("CaptureSourceId")
+                        .HasMaxLength(80)
+                        .HasColumnType("varchar(80)");
+
                     b.Property<int>("Chain")
                         .HasColumnType("int");
 
@@ -44,6 +48,10 @@ namespace Offers.Api.Features.OfferPublication.Migrations
                     b.Property<DateTime?>("EndsOn")
                         .HasColumnType("date");
 
+                    b.Property<string>("ExtractionKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
                     b.Property<DateTime?>("LastExtractedAt")
                         .HasColumnType("datetime(6)");
 
@@ -52,6 +60,10 @@ namespace Offers.Api.Features.OfferPublication.Migrations
 
                     b.Property<string>("OriginalDescription")
                         .HasColumnType("longtext");
+
+                    b.Property<string>("OriginalTitle")
+                        .HasMaxLength(512)
+                        .HasColumnType("varchar(512)");
 
                     b.Property<string>("SourceOfferId")
                         .HasMaxLength(512)
@@ -74,6 +86,9 @@ namespace Offers.Api.Features.OfferPublication.Migrations
                         .HasColumnType("longtext");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ExtractionKey")
+                        .IsUnique();
 
                     b.HasIndex("Status", "StartsOn", "EndsOn");
 
