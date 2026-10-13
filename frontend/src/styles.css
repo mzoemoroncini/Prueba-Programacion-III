@@ -25,3 +25,15 @@ article, .notice { background: white; border: 1px solid #deded5; border-radius: 
 .source { margin-top: 28px; }
 .preserve { white-space: pre-wrap; }
 @media (max-width: 480px) { main { padding: 28px 16px; } article, .notice { padding: 20px; } }
+
+/* Administración */
+.admin-link { float: right; color: #246047; }
+.login { max-width: 420px; display: grid; gap: 12px; padding: 24px; background: white; border: 1px solid #deded5; border-radius: 14px; }
+input { padding: 12px; border: 1px solid #8c9690; border-radius: 6px; font: inherit; width: 100%; }
+input:focus-visible { outline: 3px solid #c4881a; outline-offset: 2px; }
+button:disabled { opacity: .6; cursor: wait; }
+.admin-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 20px 0; }
+.admin-list { list-style: none; padding: 0; display: grid; gap: 12px; }
+.offer-row { width: 100%; text-align: left; background: white; color: #252a2b; border: 1px solid #deded5; display: grid; gap: 8px; overflow-wrap: anywhere; }
+.offer-row:hover { background: #eaf1eb; }
+.danger { background: #97372e; }

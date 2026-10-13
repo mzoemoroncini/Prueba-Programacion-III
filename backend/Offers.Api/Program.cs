@@ -4,6 +4,7 @@ using Offers.Api.Features.OfferPublication;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
+builder.AddAdminAccess();
 var connectionString = builder.Configuration.GetConnectionString("Offers");
 if (!string.IsNullOrWhiteSpace(connectionString))
 {
@@ -11,5 +12,9 @@ if (!string.IsNullOrWhiteSpace(connectionString))
 }
 var app = builder.Build();
 app.UseExceptionHandler();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapAdminAccess();
+app.MapAdminOffers();
 app.MapOfferBrowsing();
 app.Run();

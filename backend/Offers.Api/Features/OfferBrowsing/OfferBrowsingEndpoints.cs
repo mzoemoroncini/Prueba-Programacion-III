@@ -41,15 +41,7 @@ public static class OfferBrowsingEndpoints
                     .Include(x => x.Benefits)
                     .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
                 if (offer is null) return Results.NotFound();
-                var benefits = offer.Benefits.OrderBy(x => x.Id).Select(x => new OfferBenefitDto(
-                    x.Type.ToString(), x.Description, x.OriginalDescription, x.Requirements,
-                    x.Percentage, x.DiscountAmount, x.PromotionalPrice,
-                    x.Currency, x.PurchaseQuantity, x.ReceivedQuantity)).ToList();
-                return Results.Ok(new OfferDetailDto(offer.Id, ChainName(offer.Chain),
-                    offer.Summary ?? offer.OriginalDescription, offer.OriginalDescription,
-                    offer.Conditions ?? offer.OriginalConditions,
-                    offer.CodeStatus == OfferCodeStatus.Available ? offer.Code : null,
-                    offer.CodeStatus.ToString(), offer.StartsOn, offer.EndsOn, offer.SourceUrl, benefits));
+                return Results.Ok(ToDetailDto(offer));
             }
             catch (DbException)
             {
@@ -57,6 +49,19 @@ public static class OfferBrowsingEndpoints
                 return Unavailable();
             }
         });
+    }
+
+    internal static OfferDetailDto ToDetailDto(Offer offer)
+    {
+        var benefits = offer.Benefits.OrderBy(x => x.Id).Select(x => new OfferBenefitDto(
+            x.Type.ToString(), x.Description, x.OriginalDescription, x.Requirements,
+            x.Percentage, x.DiscountAmount, x.PromotionalPrice, x.Currency,
+            x.PurchaseQuantity, x.ReceivedQuantity)).ToList();
+        return new OfferDetailDto(offer.Id, ChainName(offer.Chain),
+            offer.Summary ?? offer.OriginalDescription, offer.OriginalDescription,
+            offer.Conditions ?? offer.OriginalConditions,
+            offer.CodeStatus == OfferCodeStatus.Available ? offer.Code : null,
+            offer.CodeStatus.ToString(), offer.StartsOn, offer.EndsOn, offer.SourceUrl, benefits);
     }
 
     private static IResult Unavailable() => Results.Problem(

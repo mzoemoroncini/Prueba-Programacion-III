@@ -73,6 +73,46 @@ try
         var result = await client.GetFromJsonAsync<OfferDetailDto>("/api/offers/" + offer.Id);
         Check(result is not null && result.Code == null && result.CodeStatus == offer.CodeStatus.ToString(), "Código ausente o incierto no expone texto residual");
     }
+    var adminPassword = Environment.GetEnvironmentVariable("Admin__Password");
+    var adminUsername = Environment.GetEnvironmentVariable("Admin__Username");
+    if (!string.IsNullOrWhiteSpace(adminPassword) && !string.IsNullOrWhiteSpace(adminUsername))
+    {
+        using var handler = new HttpClientHandler { CookieContainer = new CookieContainer(), AllowAutoRedirect = false };
+        using var admin = new HttpClient(handler) { BaseAddress = new Uri(apiUrl) };
+        async Task<HttpResponseMessage> PostAdmin(string path, object? body = null)
+        {
+            var csrf = await admin.GetFromJsonAsync<Dictionary<string, string>>("/api/admin/csrf");
+            using var request = new HttpRequestMessage(HttpMethod.Post, path);
+            request.Headers.Add("X-CSRF-TOKEN", csrf!["token"]);
+            if (body is not null) request.Content = JsonContent.Create(body);
+            return await admin.SendAsync(request);
+        }
+        Check((await admin.GetAsync("/api/admin/offers")).StatusCode == HttpStatusCode.Unauthorized, "Listado administrativo exige sesión");
+        Check((await admin.PostAsJsonAsync("/api/admin/login", new { username = adminUsername, password = adminPassword })).StatusCode == HttpStatusCode.BadRequest,
+            "Login rechaza solicitudes sin token CSRF");
+        Check((await PostAdmin("/api/admin/login", new { username = adminUsername, password = "incorrect-password" })).StatusCode == HttpStatusCode.Unauthorized,
+            "Credenciales incorrectas rechazadas");
+        var login = await PostAdmin("/api/admin/login", new { username = adminUsername, password = adminPassword });
+        Check(login.StatusCode == HttpStatusCode.NoContent, "Login válido crea sesión");
+        Check(login.Headers.GetValues("Set-Cookie").Any(x => x.Contains("httponly", StringComparison.OrdinalIgnoreCase) && x.Contains("samesite=strict", StringComparison.OrdinalIgnoreCase)),
+            "Cookie de sesión HttpOnly y SameSite Strict");
+        Check((await admin.GetAsync("/api/admin/session")).StatusCode == HttpStatusCode.OK, "Sesión administrativa consultable");
+        var pending = hidden[0];
+        Check((await admin.GetAsync("/api/admin/offers/" + pending.Id)).StatusCode == HttpStatusCode.OK, "Administrador puede revisar ofertas pendientes");
+        Check((await admin.PostAsync("/api/admin/offers/" + pending.Id + "/publish", null)).StatusCode == HttpStatusCode.BadRequest,
+            "Publicación rechaza solicitudes sin token CSRF");
+        Check((await PostAdmin("/api/admin/offers/" + pending.Id + "/publish")).StatusCode == HttpStatusCode.NoContent, "Administrador publica una oferta pendiente");
+        Check((await client.GetAsync("/api/offers/" + pending.Id)).StatusCode == HttpStatusCode.OK, "Publicación habilita el detalle público");
+        Check((await PostAdmin("/api/admin/offers/" + pending.Id + "/disable")).StatusCode == HttpStatusCode.NoContent, "Administrador desactiva una oferta");
+        Check((await client.GetAsync("/api/offers/" + pending.Id)).StatusCode == HttpStatusCode.NotFound, "Desactivación retira el detalle público");
+        pending.SourceUrl = "javascript:alert(1)";
+        await db.SaveChangesAsync();
+        Check((await PostAdmin("/api/admin/offers/" + pending.Id + "/publish")).StatusCode == HttpStatusCode.BadRequest, "Publicación rechaza fuente no HTTP/HTTPS");
+        Check((await PostAdmin("/api/admin/logout")).StatusCode == HttpStatusCode.NoContent, "Cierre de sesión exitoso");
+        Check((await admin.GetAsync("/api/admin/offers")).StatusCode == HttpStatusCode.Unauthorized, "Cookie cerrada no autoriza consultas");
+        Check((await admin.PostAsync("/api/admin/offers/" + pending.Id + "/disable", null)).StatusCode == HttpStatusCode.Unauthorized,
+            "Acción administrativa exige sesión en backend");
+    }
 }
 finally
 {

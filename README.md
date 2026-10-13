@@ -43,7 +43,7 @@ Las carpetas de features reservan los cinco flujos acordados: captación, public
 
 ## Pendiente
 
-El modelo de ofertas, el contexto EF Core y la migración InitialOffers están preparados. La migración se aplicó a una instancia MySQL 8.4.11 local de desarrollo en este entorno. Autenticación, publicación administrativa, reportes, métricas de uso e integración IA siguen pendientes.
+El modelo de ofertas, el contexto EF Core y la migración InitialOffers están preparados. La migración se aplicó a una instancia MySQL 8.4.11 local de desarrollo en este entorno. Reportes, métricas de uso e integración IA siguen pendientes.
 
 Consultar `CONVENTIONS.md` antes de agregar funcionalidades.
 
@@ -101,4 +101,23 @@ dotnet run --project backend/Offers.Checks
 
 Sin configuración ejecuta los checks de estado, límites de vigencia y fecha argentina. Para probar MySQL y HTTP, configurar `ConnectionStrings__Offers` y `OFFERS_CHECKS_API_URL` apuntando a una API activa con la misma base. Ejecutar solo contra una base de desarrollo: crea ofertas de prueba temporales y las elimina al finalizar.
 
-Se verificaron las reglas, la lectura de varios beneficios y decimales, códigos, fechas y la exclusión del detalle para ofertas no disponibles contra MySQL real. No se consideran cerradas la extracción IA, la publicación administrativa, los reportes ni las métricas de consultas/clics.
+Se verificaron las reglas, la lectura de varios beneficios y decimales, códigos, fechas y la exclusión del detalle para ofertas no disponibles contra MySQL real. No se consideran cerradas la extracción IA, los reportes ni las métricas de consultas/clics.
+
+## Administración de publicaciones
+
+Acceder desde Administración en el catálogo o mediante `/?admin=1`.
+
+- Login, consulta de sesión y cierre de sesión (HU17).
+- Listado administrativo y detalle para revisar ofertas pendientes, publicadas y desactivadas (HU18).
+- Aviso de ofertas sin vencimiento informado (HU16).
+- Publicación y desactivación (HU20 y HU21).
+- Publicar no omite el control público de vigencia. No existe carga manual de ofertas.
+- El backend valida cadena, enlace HTTP/HTTPS, coherencia de fechas, código y valores de beneficios antes de publicar.
+
+Configurar `Admin__Username` y `Admin__Password` mediante variables de entorno privadas. No existe registro de administradores ni contraseña predeterminada. En este entorno se generó una contraseña aleatoria almacenada únicamente en el archivo local `.env` ignorado por Git.
+
+La sesión utiliza una cookie HttpOnly con SameSite Strict y duración absoluta de dos horas. Cada acción POST administrativa, incluido el login, requiere un token obtenido desde `/api/admin/csrf` y enviado en `X-CSRF-TOKEN`. Se solicita un token nuevo después de cambiar la identidad. No se guardan credenciales ni tokens de sesión en localStorage.
+
+Para HTTP local usar `ASPNETCORE_ENVIRONMENT=Development`. Fuera de desarrollo las cookies requieren HTTPS. Las claves de protección de cookies se guardan en `.local/keys` bajo el directorio de ejecución y se excluyen de Git; conservarlas de forma privada si se necesita mantener sesiones entre reinicios.
+
+Las pruebas de integración también verifican accesos sin sesión, credenciales incorrectas, CSRF, publicación, desactivación, rechazo de enlaces inválidos y cierre de sesión. Para ejecutar esa parte, proporcionar las mismas variables administrativas a la API y a Offers.Checks.
