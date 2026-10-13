@@ -15,8 +15,8 @@ public sealed class OffersDbContext(DbContextOptions<OffersDbContext> options) :
         offer.Property(x => x.Id).HasColumnType("char(36)");
         offer.Property(x => x.SourceUrl).IsRequired();
         offer.Property(x => x.Status).HasDefaultValue(OfferStatus.Pending);
-        offer.Property(x => x.StartsOn).HasColumnType("date");
-        offer.Property(x => x.EndsOn).HasColumnType("date");
+        offer.Property(x => x.StartsOn).HasConversion(v => v.HasValue ? v.Value.ToDateTime(TimeOnly.MinValue) : (DateTime?)null, v => v.HasValue ? DateOnly.FromDateTime(v.Value) : (DateOnly?)null).HasColumnType("date");
+        offer.Property(x => x.EndsOn).HasConversion(v => v.HasValue ? v.Value.ToDateTime(TimeOnly.MinValue) : (DateTime?)null, v => v.HasValue ? DateOnly.FromDateTime(v.Value) : (DateOnly?)null).HasColumnType("date");
         offer.Property(x => x.CreatedAt).HasConversion(v => v.UtcDateTime, v => new DateTimeOffset(DateTime.SpecifyKind(v, DateTimeKind.Utc))).HasColumnType("datetime(6)");
         offer.Property(x => x.LastExtractedAt).HasConversion(v => v.HasValue ? v.Value.UtcDateTime : (DateTime?)null, v => v.HasValue ? new DateTimeOffset(DateTime.SpecifyKind(v.Value, DateTimeKind.Utc)) : (DateTimeOffset?)null).HasColumnType("datetime(6)");
         offer.HasIndex(x => new { x.Status, x.StartsOn, x.EndsOn });

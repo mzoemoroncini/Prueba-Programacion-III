@@ -41,7 +41,7 @@ namespace Offers.Api.Features.OfferPublication.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<DateOnly?>("EndsOn")
+                    b.Property<DateTime?>("EndsOn")
                         .HasColumnType("date");
 
                     b.Property<DateTime?>("LastExtractedAt")
@@ -62,7 +62,7 @@ namespace Offers.Api.Features.OfferPublication.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("varchar(2048)");
 
-                    b.Property<DateOnly?>("StartsOn")
+                    b.Property<DateTime?>("StartsOn")
                         .HasColumnType("date");
 
                     b.Property<int>("Status")
