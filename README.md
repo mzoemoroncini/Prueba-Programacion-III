@@ -7,6 +7,14 @@ Base inicial de React con JavaScript y una API ASP.NET Core. MySQL será la pers
 - Node.js 22.12 o superior compatible con Vite 7.
 - SDK .NET 10.
 
+## Abrir en Visual Studio
+
+Abrir `DescuentosIA.sln` desde la raíz con Visual Studio compatible con .NET 10 y la carga de trabajo ASP.NET y desarrollo web instalada. La solución contiene `Offers.Api` (backend) y `Offers.Checks` (verificaciones).
+
+Establecer `Offers.Api` como proyecto de inicio. Su perfil ejecuta la API en `http://localhost:5000` en modo Development. Configurar la conexión MySQL y las claves mediante **Administrar secretos de usuario** del proyecto, usando las secciones y nombres indicados en la configuración de este README. No guardar credenciales en `launchSettings.json`.
+
+React permanece en `frontend` y se ejecuta con `npm install` y `npm run dev` desde la terminal de Visual Studio. Abrir la dirección que indique Vite para usar la interfaz. Iniciar la API no inicia React ni MySQL automáticamente.
+
 ## Frontend
 
 Desde `frontend`:
@@ -201,3 +209,42 @@ OFFERS_CHECKS_LIVE_GEMINI=true dotnet run --project backend/Offers.Checks
 ```
 
 Esta prueba llama al proveedor real y consume su cuota. No guarda la oferta de prueba en MySQL. La captación automática permanece deshabilitada hasta configurar la habilitación y las credenciales restantes.
+
+
+## Despliegue para pruebas en Railway
+
+El Dockerfile de la raíz compila React y .NET 10, incluye el navegador de Playwright 1.63.0 y sirve frontend y `/api` desde el mismo dominio. Conserva MySQL y el backend C#. No utiliza el proxy de Vite en producción.
+
+Crear un proyecto Railway con un servicio MySQL 8 y otro servicio conectado a este repositorio, con la raíz del repositorio como directorio de construcción. `railway.json` declara Dockerfile y la comprobación `/health`. La conexión MySQL queda en la red privada del proyecto; no hace falta exponerla públicamente.
+
+Configurar las variables privadas del servicio de aplicación:
+
+| Variable | Valor |
+| --- | --- |
+| `ConnectionStrings__Offers` | `Server=${{MySQL.MYSQLHOST}};Port=${{MySQL.MYSQLPORT}};Database=${{MySQL.MYSQLDATABASE}};User=${{MySQL.MYSQLUSER}};Password=${{MySQL.MYSQLPASSWORD}};` |
+| `Admin__Username` | Usuario elegido para las pruebas |
+| `Admin__Password` | Contraseña privada |
+| `Capture__Provider` | `Gemini` |
+| `Capture__Model` | `gemini-3.6-flash` |
+| `Capture__ApiKey` | Clave privada de Gemini |
+| `Capture__Enabled` | `false` hasta comprobar el despliegue; luego `true` para probar captación |
+| `Ocr__Enabled` | `true` |
+| `Ocr__ApiKey` | Clave privada OCR.space |
+
+Si el servicio de base de datos tiene otro nombre, reemplazar `MySQL` en las referencias. Railway proporciona `PORT`; el contenedor escucha en ese puerto en todas las interfaces. `ASPNETCORE_ENVIRONMENT=Production` viene definido en la imagen, con cookies seguras para el dominio HTTPS.
+
+Al iniciar el contenedor, `deployment/start.sh` ejecuta `--migrate` para aplicar ambos contextos antes de iniciar la API. Una migración fallida impide declarar el servicio listo. Este comportamiento aplica al contenedor; ejecutar la API normalmente en desarrollo no aplica migraciones automáticamente.
+
+Generar un dominio HTTPS para la aplicación desde Railway y entrar al catálogo y a Administración. La base nueva comienza vacía. La prueba completa de extracción de fuentes sigue pendiente por los HTTP 503 observados en Gemini.
+
+Las claves de cookies quedan en `/app/.local/keys`; sin volumen persistente, un redespliegue cierra las sesiones anteriores y requiere iniciar sesión otra vez. Los datos de ofertas permanecen en el volumen del servicio MySQL. Para pruebas, ejecutar una sola réplica de la aplicación.
+
+El contenedor ejecuta la aplicación con un usuario sin privilegios. La comprobación `/health` verifica que la aplicación arrancó después de las migraciones, no la disponibilidad continua de Gemini u OCR.
+
+Verificación local alternativa:
+
+```bash
+docker build -t ofertas-ia .
+```
+
+La construcción de Docker y el despliegue remoto requieren sus respectivos entornos. No se consideran verificados solo por compilar React y C# por separado. Consultar los créditos y costos de la cuenta Railway antes de habilitar servicios pagos; no se configura un plan pago automáticamente.

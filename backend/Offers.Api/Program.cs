@@ -4,7 +4,7 @@ using Offers.Api.Features.OfferCapture;
 using Offers.Api.Features.SourceReprocessing;
 using Offers.Api.Features.OfferPublication;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(args.Where(x => x != "--migrate").ToArray());
 builder.Services.AddProblemDetails();
 builder.AddAdminAccess();
 var captureSettings = new CaptureSettings();
@@ -31,11 +31,25 @@ if (!string.IsNullOrWhiteSpace(connectionString))
     builder.Services.AddDbContext<OffersDbContext>(options => options.UseMySQL(connectionString));
 }
 var app = builder.Build();
+if (args.Contains("--migrate"))
+{
+    if (string.IsNullOrWhiteSpace(connectionString))
+        throw new InvalidOperationException("Falta la conexión MySQL para aplicar migraciones.");
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<OffersDbContext>().Database.MigrateAsync();
+    await scope.ServiceProvider.GetRequiredService<CaptureDbContext>().Database.MigrateAsync();
+    return;
+}
 app.UseExceptionHandler();
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapAdminAccess();
 app.MapAdminOffers();
 app.MapOfferBrowsing();
 app.MapCapture();
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapFallback("/api/{**path}", () => Results.NotFound());
+app.MapFallbackToFile("index.html");
 app.Run();
