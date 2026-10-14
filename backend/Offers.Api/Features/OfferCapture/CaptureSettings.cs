@@ -7,13 +7,14 @@ public sealed class CaptureSettings
     public OcrSettings Ocr { get; set; } = new();
     public bool Enabled { get; set; }
     public int IntervalHours { get; set; } = 24;
+    public string Provider { get; set; } = "Gemini";
     public string? ApiKey { get; set; }
     public string? Model { get; set; }
     public bool RenderPages { get; set; } = true;
     public string? ProxyServer { get; set; }
     public string? BrowserExecutablePath { get; set; }
     public List<CaptureSource> Sources { get; set; } = [];
-    public bool IsReady => Enabled && !string.IsNullOrWhiteSpace(ApiKey) && !string.IsNullOrWhiteSpace(Model) && Sources.Count > 0 && Ocr.IsReady;
+    public bool IsReady => (Provider.Equals("Gemini", StringComparison.OrdinalIgnoreCase) || Provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase)) && Enabled && !string.IsNullOrWhiteSpace(ApiKey) && !string.IsNullOrWhiteSpace(Model) && Sources.Count > 0 && Ocr.IsReady;
 }
 
 public sealed class CaptureSource

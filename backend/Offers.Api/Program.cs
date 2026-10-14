@@ -14,6 +14,13 @@ builder.Services.AddSingleton(captureSettings);
 builder.Services.AddHttpClient<OcrSpaceClient>(client => client.Timeout = TimeSpan.FromMinutes(2));
 builder.Services.AddHttpClient<SourceReader>(client => { client.Timeout = TimeSpan.FromSeconds(60); client.DefaultRequestHeaders.UserAgent.ParseAdd("OffersMVP/0.1"); }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = System.Net.DecompressionMethods.All });
 builder.Services.AddHttpClient<OpenAiOfferExtractor>(client => client.Timeout = TimeSpan.FromMinutes(3));
+builder.Services.AddHttpClient<GeminiOfferExtractor>(client => client.Timeout = TimeSpan.FromMinutes(3));
+builder.Services.AddTransient<IOfferExtractor>(services => captureSettings.Provider.ToLowerInvariant() switch
+{
+    "gemini" => services.GetRequiredService<GeminiOfferExtractor>(),
+    "openai" => services.GetRequiredService<OpenAiOfferExtractor>(),
+    _ => throw new InvalidOperationException("Proveedor de IA no admitido. Usá Gemini u OpenAI.")
+});
 builder.Services.AddScoped<ExtractedOfferWriter>();
 builder.Services.AddSingleton<CaptureCoordinator>();
 builder.Services.AddHostedService<CaptureWorker>();

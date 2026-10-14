@@ -129,7 +129,7 @@ La API incluye un proceso periódico (24 horas por defecto) y las acciones prote
 
 Las fuentes iniciales están en `backend/Offers.Api/appsettings.json`. Se consultan páginas públicas oficiales, sin sesiones de consumidores ni selección automática de ubicación. Se obtiene texto renderizado, una captura de la página para lectura visual/OCR y hasta tres PDF enlazados en dominios oficiales. Las fechas relativas permanecen en las condiciones; no se convierten en fechas inventadas.
 
-La lectura usa OCR.space para convertir capturas y PDF a texto. Ese texto, junto con el texto de la página y sus enlaces, se envía a OpenAI Responses con esquema JSON estricto; con OCR habilitado no se envían imágenes ni PDF a la IA. Las fuentes se tratan como datos, no como instrucciones. Se rechazan respuestas incompletas, clasificaciones inciertas, valores inválidos y enlaces que no estén presentes en la lectura. Las ofertas nuevas quedan Pending. Una modificación de una oferta Published vuelve a Pending; Disabled se conserva. Una fuente sin ofertas o una lectura fallida no elimina registros anteriores.
+La lectura usa OCR.space para convertir capturas y PDF a texto. Ese texto, junto con el texto de la página y sus enlaces, se envía al proveedor configurado (Gemini por defecto u OpenAI Responses) con un esquema JSON; con OCR habilitado no se envían imágenes ni PDF a la IA. Las fuentes se tratan como datos, no como instrucciones. Se rechazan respuestas incompletas, clasificaciones inciertas, valores inválidos y enlaces que no estén presentes en la lectura. Las ofertas nuevas quedan Pending. Una modificación de una oferta Published vuelve a Pending; Disabled se conserva. Una fuente sin ofertas o una lectura fallida no elimina registros anteriores.
 
 La identidad usa la fuente configurada y el identificador publicado cuando existe; de lo contrario, el título original normalizado. Se detectan colisiones dentro de una lectura y hay un índice único en MySQL. Si la fuente cambia su identificador o su título sin un identificador estable, la correspondencia puede requerir revisión: no se implementa deduplicación semántica avanzada.
 
@@ -138,13 +138,26 @@ La identidad usa la fuente configurada y el identificador publicado cuando exist
 Definir en el entorno privado de la API:
 
 - `Capture__Enabled=true`.
+- `Capture__Provider=Gemini` (también se admite `OpenAI`).
 - `Capture__ApiKey`: clave de API del proveedor, nunca en Git ni en el frontend.
-- `Capture__Model`: identificador de un modelo compatible con Responses y Structured Outputs.
+- `Capture__Model`: `gemini-3.6-flash` para Gemini, o un modelo compatible con Responses y Structured Outputs para OpenAI. Verificar disponibilidad y cuota en la cuenta del proveedor.
 - `Ocr__Enabled=true` (valor inicial).
 - `Ocr__ApiKey`: clave propia de OCR.space, privada.
 - `Capture__IntervalHours`: intervalo de 1 a 168 horas; valor inicial 24.
 
-No hay clave ni modelo predeterminados. Sin clave de IA, modelo, clave OCR y habilitación explícita no se inicia la captación. La clave de API no se obtiene de la sesión de ChatGPT.
+No hay clave ni modelo predeterminados. Sin clave de IA, modelo, clave OCR y habilitación explícita no se inicia la captación. La clave de API no se obtiene de la sesión de ChatGPT. El nivel gratuito de Gemini tiene cuotas: un HTTP 429 registra un fallo y conserva las ofertas existentes; no se cambia automáticamente a un proveedor pago.
+
+Para desarrollo local, .NET carga User Secrets con `ASPNETCORE_ENVIRONMENT=Development`:
+
+```bash
+dotnet user-secrets set "Capture:Provider" "Gemini" --project backend/Offers.Api
+dotnet user-secrets set "Capture:Model" "gemini-3.6-flash" --project backend/Offers.Api
+dotnet user-secrets set "Capture:ApiKey" "REEMPLAZAR_LOCALMENTE" --project backend/Offers.Api
+```
+
+User Secrets guarda la clave fuera del repositorio y solo se carga en desarrollo. En producción usar variables de entorno privadas. `.env.example` documenta las variables; la API no carga archivos `.env` automáticamente.
+
+Documentación del proveedor: https://ai.google.dev/gemini-api/docs/pricing y https://ai.google.dev/gemini-api/docs/generate-content/structured-output.
 
 Chromium debe estar instalado para la lectura renderizada. Después de compilar, instalarlo con el script de Playwright generado, indicando una carpeta de navegadores local al proyecto:
 
@@ -171,7 +184,7 @@ Sin activar OCR, el adaptador conserva la lectura visual directa anterior, que r
 - La lectura en navegador obtuvo texto y capturas de las tres fuentes oficiales seleccionadas.
 - Se verificaron los contratos OCR e IA con respuestas simuladas: imagen y PDF convertidos a texto, IA sin archivos, límites de tamaño, rechazo de OCR parcial y salida IA incompleta.
 - Se probó contra MySQL el flujo de captación con fuentes y proveedor controlados, sin duplicados, conservación de Disabled, revisión de cambios publicados y registro de fallos.
-- No se hicieron llamadas reales a OCR.space ni llamadas pagas de IA. No se validaron todavía la precisión del OCR ni la cobertura de promociones de un modelo real. El catálogo no contiene ofertas reales extraídas.
+- No se hicieron llamadas reales a OCR.space. Se verificó el acceso a Gemini y la disponibilidad de modelos con una clave privada. La prueba de extracción real devolvió HTTP 503 en dos intentos; su resultado sigue pendiente. Los contratos de Gemini se verificaron con respuestas simuladas, incluyendo salidas incompletas, bloqueos, cuotas y errores del proveedor. No se validaron todavía la precisión del OCR ni la cobertura de promociones de un modelo real. El catálogo no contiene ofertas reales extraídas.
 
 Para repetir las lecturas externas, con Chromium configurado y acceso de red:
 
@@ -180,3 +193,11 @@ OFFERS_CHECKS_LIVE_SOURCES=true dotnet run --project backend/Offers.Checks
 ```
 
 La ejecución ordinaria de Offers.Checks no llama a la API real de IA. Las verificaciones MySQL usan únicamente una base de desarrollo y eliminan sus fixtures al finalizar.
+
+Para probar Gemini explícitamente con un texto controlado, usando User Secrets o variables de entorno:
+
+```bash
+OFFERS_CHECKS_LIVE_GEMINI=true dotnet run --project backend/Offers.Checks
+```
+
+Esta prueba llama al proveedor real y consume su cuota. No guarda la oferta de prueba en MySQL. La captación automática permanece deshabilitada hasta configurar la habilitación y las credenciales restantes.

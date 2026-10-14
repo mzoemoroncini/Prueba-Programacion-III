@@ -31,7 +31,7 @@ public sealed class CaptureCoordinator(IServiceScopeFactory scopes, CaptureSetti
                         document = await scope.ServiceProvider.GetRequiredService<OcrSpaceClient>().ReadAsync(document, settings.Ocr, token);
                     }
                     run.Stage = "Extract";
-                    var result = await scope.ServiceProvider.GetRequiredService<OpenAiOfferExtractor>().ExtractAsync(document, settings, token);
+                    var result = await scope.ServiceProvider.GetRequiredService<IOfferExtractor>().ExtractAsync(document, settings, token);
                     run.Stage = "ValidateAndSave";
                     run.OfferCount = await scope.ServiceProvider.GetRequiredService<ExtractedOfferWriter>().SaveAsync(source, document, result, token);
                     run.Status = "Succeeded";

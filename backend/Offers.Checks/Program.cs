@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Configuration;
 using Offers.Api.Features.OfferBrowsing;
 using Offers.Api.Features.OfferPublication;
 
@@ -55,6 +56,51 @@ Check(parsed.Offers.Single().Code == "Test-zZ-01" && parsed.Offers.Single().Bene
 using var partialAi = new HttpClient(new StubHttpHandler(_ => Task.FromResult("{\"status\":\"incomplete\",\"output\":[]}")));
 try { await new OpenAiOfferExtractor(partialAi).ExtractAsync(document, aiSettings, CancellationToken.None); throw new Exception("Respuesta incompleta aceptada"); }
 catch (InvalidOperationException) { Console.WriteLine("OK: Respuesta incompleta no genera ofertas"); }
+string GeminiResult(string finishReason = "STOP", ExtractionResult? value = null) => JsonSerializer.Serialize(new {
+    candidates = new[] { new { finishReason, content = new { parts = new[] {
+        new { text = JsonSerializer.Serialize(value ?? extraction, serializer) } } } } }
+});
+using var fakeGemini = new HttpClient(new StubHttpHandler(async request => {
+    Check(request.RequestUri!.AbsoluteUri == "https://generativelanguage.googleapis.com/v1beta/models/test-model:generateContent"
+        && request.Headers.GetValues("x-goog-api-key").Single() == aiSettings.ApiKey, "Gemini usa endpoint fijo y clave en cabecera");
+    using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+    var parts = body.RootElement.GetProperty("contents")[0].GetProperty("parts");
+    Check(parts.EnumerateArray().Count(x => x.TryGetProperty("inlineData", out _)) == 2, "Gemini recibe captura y PDF cuando OCR está desactivado");
+    Check(body.RootElement.GetProperty("generationConfig").GetProperty("responseJsonSchema").GetProperty("required").GetArrayLength() == 2, "Gemini solicita el contrato estructurado de ofertas");
+    return GeminiResult();
+}));
+var geminiParsed = await new GeminiOfferExtractor(fakeGemini).ExtractAsync(document, aiSettings, CancellationToken.None);
+Check(geminiParsed.Offers.Single().Code == extracted.Code && geminiParsed.Offers.Single().Benefits.Single().Percentage == 10m,
+    "Gemini conserva códigos y valores publicados");
+foreach (var invalid in new[] { GeminiResult("MAX_TOKENS"), GeminiResult("SAFETY"), "{}", "{\"candidates\":[]}",
+    "{\"candidates\":[{\"finishReason\":\"STOP\",\"content\":{\"parts\":[{\"text\":\"{\\\"uncertain\\\":false,\\\"offers\\\":null}\"}]}}]}" })
+{
+    using var incompleteGemini = new HttpClient(new StubHttpHandler(_ => Task.FromResult(invalid)));
+    try { await new GeminiOfferExtractor(incompleteGemini).ExtractAsync(document, aiSettings, CancellationToken.None); throw new Exception("Gemini incompleto aceptado"); }
+    catch (InvalidOperationException) { Console.WriteLine("OK: Gemini bloqueado, vacío o incompleto no genera ofertas"); }
+}
+foreach (var statusCode in new[] { HttpStatusCode.TooManyRequests, HttpStatusCode.ServiceUnavailable })
+{
+    using var unavailableGemini = new HttpClient(new StubHttpHandler(_ => Task.FromResult("private-provider-error"), statusCode));
+    try { await new GeminiOfferExtractor(unavailableGemini).ExtractAsync(document, aiSettings, CancellationToken.None); throw new Exception("Fallo Gemini aceptado"); }
+    catch (InvalidOperationException error) { Check(!error.Message.Contains("private-provider-error") && !error.Message.Contains(aiSettings.ApiKey!),
+        "Fallo de cuota o disponibilidad no devuelve ofertas ni revela datos del proveedor"); }
+}
+if (Environment.GetEnvironmentVariable("OFFERS_CHECKS_LIVE_GEMINI") == "true")
+{
+    var configuration = new ConfigurationBuilder().AddUserSecrets(typeof(GeminiOfferExtractor).Assembly).AddEnvironmentVariables().Build();
+    var liveSettings = new CaptureSettings();
+    configuration.GetSection("Capture").Bind(liveSettings);
+    using var liveHttp = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
+    var liveDocument = new SourceDocument(source.Url,
+        "Oferta de prueba: 10% de descuento. Código Test-zZ-01. Válida del 2026-10-13 al 2026-10-31. Solo en mostrador.",
+        null, [], [source.Url]);
+    var liveResult = await new GeminiOfferExtractor(liveHttp).ExtractAsync(liveDocument, liveSettings, CancellationToken.None);
+    Check(!liveResult.Uncertain && liveResult.Offers.Count == 1 && liveResult.Offers[0].Code == "Test-zZ-01"
+        && liveResult.Offers[0].EndsOn == new DateOnly(2026, 10, 31)
+        && liveResult.Offers[0].Benefits.Any(x => x.Percentage == 10m),
+        "Gemini real extrae código, fecha y porcentaje de un texto de prueba sin guardar ofertas");
+}
 var ocrSettings = new OcrSettings { Enabled = true, ApiKey = "test-only-ocr-key" };
 string OcrResult(int exitCode = 1, int pageCode = 1) => JsonSerializer.Serialize(new {
     IsErroredOnProcessing = false, OCRExitCode = exitCode.ToString(),
@@ -83,6 +129,14 @@ using var textAi = new HttpClient(new StubHttpHandler(async request => {
         new { type = "output_text", text = JsonSerializer.Serialize(extraction, serializer) } } } } });
 }));
 await new OpenAiOfferExtractor(textAi).ExtractAsync(ocrDocument, aiSettings, CancellationToken.None);
+
+using var textGemini = new HttpClient(new StubHttpHandler(async request => {
+    using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+    Check(body.RootElement.GetProperty("contents")[0].GetProperty("parts").EnumerateArray().All(x => x.TryGetProperty("text", out _)),
+        "Tras OCR, Gemini recibe únicamente texto");
+    return GeminiResult();
+}));
+await new GeminiOfferExtractor(textGemini).ExtractAsync(ocrDocument, aiSettings, CancellationToken.None);
 var oversized = document with { Attachments = [new SourceAttachment(source.Url, "large.pdf", "application/pdf", new byte[OcrSpaceClient.MaxFileBytes + 1])] };
 try { await new OcrSpaceClient(fakeOcr).ReadAsync(oversized, ocrSettings, CancellationToken.None); throw new Exception("Archivo grande aceptado"); }
 catch (InvalidOperationException) { Check(ocrCalls == 2, "Archivos grandes se rechazan antes de cualquier llamada OCR"); }
@@ -190,7 +244,7 @@ try
         await db.Offers.Where(x => x.ExtractionKey == extractionKey).ExecuteDeleteAsync();
     }
     var coordinatorSource = new CaptureSource { Id = "test-coordinator", Chain = source.Chain, Url = source.Url };
-    var coordinatorSettings = new CaptureSettings { Enabled = true, ApiKey = "test-only-not-a-real-key", Model = "test-model", RenderPages = false, Sources = [coordinatorSource], Ocr = ocrSettings };
+    var coordinatorSettings = new CaptureSettings { Provider = "OpenAI", Enabled = true, ApiKey = "test-only-not-a-real-key", Model = "test-model", RenderPages = false, Sources = [coordinatorSource], Ocr = ocrSettings };
     var uncertainResponse = false;
     var partialOcr = false;
     using var coordinatorOcr = new HttpClient(new StubHttpHandler(_ => Task.FromResult(OcrResult(partialOcr ? 2 : 1))));
@@ -205,7 +259,7 @@ try
     services.AddDbContext<CaptureDbContext>(x => x.UseMySQL(connection, mysql => mysql.MigrationsHistoryTable("__CaptureMigrationsHistory")));
     services.AddScoped<ExtractedOfferWriter>();
     services.AddScoped(_ => new SourceReader(sourceStub, coordinatorSettings));
-    services.AddScoped(_ => new OpenAiOfferExtractor(aiStub));
+    services.AddScoped<IOfferExtractor>(_ => new OpenAiOfferExtractor(aiStub));
     services.AddScoped(_ => new OcrSpaceClient(coordinatorOcr));
     await using var provider = services.BuildServiceProvider();
     var coordinator = new CaptureCoordinator(provider.GetRequiredService<IServiceScopeFactory>(), coordinatorSettings, NullLogger<CaptureCoordinator>.Instance);
