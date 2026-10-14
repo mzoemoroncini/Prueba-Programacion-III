@@ -16,9 +16,9 @@ public static class CaptureEndpoints
             catch (DbException) { return Results.Problem(statusCode: 503, title: "No se pudo consultar el registro de lecturas."); }
         });
         group.MapGet("/status", (CaptureSettings settings, HttpContext http) => Results.Ok(new {
-            settings.Enabled, configured = settings.IsReady && http.RequestServices.GetService<CaptureDbContext>() is not null,
+            settings.Enabled, ocrEnabled = settings.Ocr.Enabled, ocrConfigured = settings.Ocr.IsReady, configured = settings.IsReady && http.RequestServices.GetService<CaptureDbContext>() is not null,
             sources = settings.Sources.Select(x => new { x.Id, Chain = x.Chain.ToString(), x.Url }),
-            message = settings.IsReady ? "Lectura configurada." : "Lectura deshabilitada o pendiente de configurar la clave y el modelo de IA."
+            message = settings.IsReady ? "Lectura configurada." : "Lectura deshabilitada o pendiente de configurar IA y OCR.space."
         }));
         group.MapGet("/runs", async (HttpContext http, CancellationToken token) => {
             var db = http.RequestServices.GetService<CaptureDbContext>();

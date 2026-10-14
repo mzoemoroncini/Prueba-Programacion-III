@@ -129,7 +129,7 @@ La API incluye un proceso periódico (24 horas por defecto) y las acciones prote
 
 Las fuentes iniciales están en `backend/Offers.Api/appsettings.json`. Se consultan páginas públicas oficiales, sin sesiones de consumidores ni selección automática de ubicación. Se obtiene texto renderizado, una captura de la página para lectura visual/OCR y hasta tres PDF enlazados en dominios oficiales. Las fechas relativas permanecen en las condiciones; no se convierten en fechas inventadas.
 
-El adaptador usa OpenAI Responses con esquema JSON estricto, entrada de imágenes y archivos PDF. Las fuentes se tratan como datos, no como instrucciones. Se rechazan respuestas incompletas, clasificaciones inciertas, valores inválidos y enlaces que no estén presentes en la lectura. Las ofertas nuevas quedan Pending. Una modificación de una oferta Published vuelve a Pending; Disabled se conserva. Una fuente sin ofertas o una lectura fallida no elimina registros anteriores.
+La lectura usa OCR.space para convertir capturas y PDF a texto. Ese texto, junto con el texto de la página y sus enlaces, se envía a OpenAI Responses con esquema JSON estricto; con OCR habilitado no se envían imágenes ni PDF a la IA. Las fuentes se tratan como datos, no como instrucciones. Se rechazan respuestas incompletas, clasificaciones inciertas, valores inválidos y enlaces que no estén presentes en la lectura. Las ofertas nuevas quedan Pending. Una modificación de una oferta Published vuelve a Pending; Disabled se conserva. Una fuente sin ofertas o una lectura fallida no elimina registros anteriores.
 
 La identidad usa la fuente configurada y el identificador publicado cuando existe; de lo contrario, el título original normalizado. Se detectan colisiones dentro de una lectura y hay un índice único en MySQL. Si la fuente cambia su identificador o su título sin un identificador estable, la correspondencia puede requerir revisión: no se implementa deduplicación semántica avanzada.
 
@@ -139,10 +139,12 @@ Definir en el entorno privado de la API:
 
 - `Capture__Enabled=true`.
 - `Capture__ApiKey`: clave de API del proveedor, nunca en Git ni en el frontend.
-- `Capture__Model`: identificador de un modelo compatible con imágenes, PDF y Structured Outputs.
+- `Capture__Model`: identificador de un modelo compatible con Responses y Structured Outputs.
+- `Ocr__Enabled=true` (valor inicial).
+- `Ocr__ApiKey`: clave propia de OCR.space, privada.
 - `Capture__IntervalHours`: intervalo de 1 a 168 horas; valor inicial 24.
 
-No hay clave ni modelo predeterminados. Sin ambos y sin habilitación explícita no se hacen llamadas de IA. La clave de API no se obtiene de la sesión de ChatGPT.
+No hay clave ni modelo predeterminados. Sin clave de IA, modelo, clave OCR y habilitación explícita no se inicia la captación. La clave de API no se obtiene de la sesión de ChatGPT.
 
 Chromium debe estar instalado para la lectura renderizada. Después de compilar, instalarlo con el script de Playwright generado, indicando una carpeta de navegadores local al proyecto:
 
@@ -155,13 +157,21 @@ También puede configurarse `Capture__BrowserExecutablePath` con la ruta de un C
 
 La lectura del navegador canaliza descargas GET/HEAD por el cliente HTTP, restringe URLs a HTTPS y bloquea destinos privados fuera de los dominios oficiales/configurados. No envía formularios ni pedidos y no ejecuta consultas POST de sitios externos. Algunas promociones que requieran sesión, ubicación, interacciones o APIs POST pueden no estar accesibles; deben aparecer como lectura incierta o error y necesitan validación con la fuente.
 
+### OCR.space
+
+La integración utiliza el motor 2 con detección automática de idioma. Se envía un archivo por petición, con la clave en una cabecera. Para el plan gratuito se rechazan archivos vacíos o mayores de 1 MB antes de hacer peticiones; los PDF admiten hasta tres páginas. No se truncan, dividen ni comprimen automáticamente los archivos. Una respuesta parcial, una página fallida o un error del proveedor detiene la extracción y queda registrado en la etapa OCR, conservando las ofertas existentes. No se utilizan claves de demostración.
+
+El plan gratuito publica un límite de 500 peticiones por día por IP y 25.000 al mes. Cada captura y cada PDF consume una petición. Esta integración no administra cuotas; si el proveedor rechaza una petición, registra el fallo. Los límites deben verificarse al elegir el plan en https://ocr.space/ocrapi.
+
+Sin activar OCR, el adaptador conserva la lectura visual directa anterior, que requiere un modelo compatible con imágenes y PDF. La configuración inicial utiliza OCR.space.
+
 ### Verificación realizada y límites
 
 - Backend y React compilan.
 - La lectura en navegador obtuvo texto y capturas de las tres fuentes oficiales seleccionadas.
-- Se verificó el contrato del adaptador con respuestas simuladas, incluidos los campos de entrada para imagen/PDF y rechazo de salida incompleta.
+- Se verificaron los contratos OCR e IA con respuestas simuladas: imagen y PDF convertidos a texto, IA sin archivos, límites de tamaño, rechazo de OCR parcial y salida IA incompleta.
 - Se probó contra MySQL el flujo de captación con fuentes y proveedor controlados, sin duplicados, conservación de Disabled, revisión de cambios publicados y registro de fallos.
-- No se hicieron llamadas pagas de IA. No se validaron todavía la precisión del OCR ni la cobertura de promociones de un modelo real. El catálogo no contiene ofertas reales extraídas.
+- No se hicieron llamadas reales a OCR.space ni llamadas pagas de IA. No se validaron todavía la precisión del OCR ni la cobertura de promociones de un modelo real. El catálogo no contiene ofertas reales extraídas.
 
 Para repetir las lecturas externas, con Chromium configurado y acceso de red:
 

@@ -92,7 +92,7 @@ export default function AdminPanel() {
     </form>}
     {auth === 'signed-in' && <>
       <section className="notice" aria-label="Lectura automática">
-        <h2>Lectura con IA</h2><p>{capture?.message || 'Consultando configuración de lectura…'}</p>
+        <h2>Lectura con IA</h2>{capture?.ocrEnabled && <p>OCR de imágenes y PDF: OCR.space</p>}<p>{capture?.message || 'Consultando configuración de lectura…'}</p>
         <button disabled={busy || !capture?.configured} onClick={() => readSource(null)}>Leer fuentes ahora</button>
         {runs.length > 0 && <details><summary>Últimas lecturas y errores</summary><ul>{runs.map(run => <li key={run.id}>
           <strong>{run.sourceId}</strong> · {run.status === 'Succeeded' ? 'Completada' : run.status === 'Failed' ? 'Fallida' : 'En curso'} · {run.stage}

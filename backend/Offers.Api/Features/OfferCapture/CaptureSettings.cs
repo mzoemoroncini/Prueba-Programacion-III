@@ -4,6 +4,7 @@ namespace Offers.Api.Features.OfferCapture;
 
 public sealed class CaptureSettings
 {
+    public OcrSettings Ocr { get; set; } = new();
     public bool Enabled { get; set; }
     public int IntervalHours { get; set; } = 24;
     public string? ApiKey { get; set; }
@@ -12,7 +13,7 @@ public sealed class CaptureSettings
     public string? ProxyServer { get; set; }
     public string? BrowserExecutablePath { get; set; }
     public List<CaptureSource> Sources { get; set; } = [];
-    public bool IsReady => Enabled && !string.IsNullOrWhiteSpace(ApiKey) && !string.IsNullOrWhiteSpace(Model) && Sources.Count > 0;
+    public bool IsReady => Enabled && !string.IsNullOrWhiteSpace(ApiKey) && !string.IsNullOrWhiteSpace(Model) && Sources.Count > 0 && Ocr.IsReady;
 }
 
 public sealed class CaptureSource

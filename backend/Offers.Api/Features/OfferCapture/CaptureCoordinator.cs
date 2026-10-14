@@ -8,7 +8,7 @@ public sealed class CaptureCoordinator(IServiceScopeFactory scopes, CaptureSetti
     private readonly SemaphoreSlim gate = new(1, 1);
     public async Task<IReadOnlyList<CaptureRun>> RunAsync(string? sourceId, CancellationToken token)
     {
-        if (!settings.IsReady) throw new InvalidOperationException("La lectura con IA requiere habilitación, clave y modelo configurados.");
+        if (!settings.IsReady) throw new InvalidOperationException("La lectura con IA requiere habilitación, clave y modelo de IA, y la clave OCR cuando corresponda.");
         var sources = settings.Sources.Where(x => sourceId is null || x.Id == sourceId).ToList();
         if (sources.Count == 0) throw new InvalidOperationException("La fuente solicitada no está configurada.");
         if (!await gate.WaitAsync(0, token)) throw new InvalidOperationException("Ya hay una lectura en curso.");
@@ -25,6 +25,11 @@ public sealed class CaptureCoordinator(IServiceScopeFactory scopes, CaptureSetti
                 try
                 {
                     var document = await scope.ServiceProvider.GetRequiredService<SourceReader>().ReadAsync(source, settings.RenderPages, token);
+                    if (settings.Ocr.Enabled)
+                    {
+                        run.Stage = "OCR";
+                        document = await scope.ServiceProvider.GetRequiredService<OcrSpaceClient>().ReadAsync(document, settings.Ocr, token);
+                    }
                     run.Stage = "Extract";
                     var result = await scope.ServiceProvider.GetRequiredService<OpenAiOfferExtractor>().ExtractAsync(document, settings, token);
                     run.Stage = "ValidateAndSave";
@@ -35,6 +40,7 @@ public sealed class CaptureCoordinator(IServiceScopeFactory scopes, CaptureSetti
                 {
                     run.Status = "Failed";
                     run.Error = run.Stage switch { "Read" => "No se pudo leer la fuente, sus imágenes o documentos.",
+                        "OCR" => "OCR.space no pudo leer completamente los archivos, se superó el límite gratuito o falló la configuración. Los datos anteriores se conservan.",
                         "Extract" => "La respuesta de IA falló, fue rechazada o quedó incompleta.",
                         _ => "La extracción es incierta, inválida o no pudo guardarse. Los datos anteriores se conservan." };
                     logger.LogWarning("Lectura de fuente {SourceId} falló en {Stage} ({ErrorType}).", source.Id, run.Stage, error.GetType().Name);

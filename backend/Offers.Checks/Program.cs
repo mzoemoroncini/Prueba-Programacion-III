@@ -55,6 +55,46 @@ Check(parsed.Offers.Single().Code == "Test-zZ-01" && parsed.Offers.Single().Bene
 using var partialAi = new HttpClient(new StubHttpHandler(_ => Task.FromResult("{\"status\":\"incomplete\",\"output\":[]}")));
 try { await new OpenAiOfferExtractor(partialAi).ExtractAsync(document, aiSettings, CancellationToken.None); throw new Exception("Respuesta incompleta aceptada"); }
 catch (InvalidOperationException) { Console.WriteLine("OK: Respuesta incompleta no genera ofertas"); }
+var ocrSettings = new OcrSettings { Enabled = true, ApiKey = "test-only-ocr-key" };
+string OcrResult(int exitCode = 1, int pageCode = 1) => JsonSerializer.Serialize(new {
+    IsErroredOnProcessing = false, OCRExitCode = exitCode.ToString(),
+    ParsedResults = new[] { new { FileParseExitCode = pageCode, ParsedText = "Código Test-zZ-01, descuento 10%" } }
+});
+var ocrCalls = 0;
+using var fakeOcr = new HttpClient(new StubHttpHandler(async request => {
+    ocrCalls++;
+    Check(request.RequestUri!.AbsoluteUri == "https://api.ocr.space/parse/image" && request.Headers.GetValues("apikey").Single() == ocrSettings.ApiKey,
+        "OCR usa endpoint fijo y clave en cabecera");
+    var multipart = (MultipartFormDataContent)request.Content!;
+    Check(await multipart.Single(x => x.Headers.ContentDisposition!.Name!.Trim('"') == "OCREngine").ReadAsStringAsync() == "2"
+        && await multipart.Single(x => x.Headers.ContentDisposition!.Name!.Trim('"') == "language").ReadAsStringAsync() == "auto",
+        "OCR selecciona motor 2 e idioma automático");
+    return OcrResult();
+}));
+var ocrDocument = await new OcrSpaceClient(fakeOcr).ReadAsync(document, ocrSettings, CancellationToken.None);
+Check(ocrCalls == 2 && ocrDocument.Text.Contains(document.Text) && ocrDocument.Text.Contains("Código Test-zZ-01")
+    && ocrDocument.Screenshot is null && ocrDocument.Attachments.Count == 0 && ocrDocument.Links.SequenceEqual(document.Links),
+    "OCR combina texto de imagen y PDF, conserva enlaces y retira archivos para IA");
+using var textAi = new HttpClient(new StubHttpHandler(async request => {
+    using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+    Check(body.RootElement.GetProperty("input")[0].GetProperty("content").EnumerateArray()
+        .All(x => x.GetProperty("type").GetString() == "input_text"), "Tras OCR, IA recibe únicamente texto");
+    return JsonSerializer.Serialize(new { status = "completed", output = new[] { new { type = "message", content = new[] {
+        new { type = "output_text", text = JsonSerializer.Serialize(extraction, serializer) } } } } });
+}));
+await new OpenAiOfferExtractor(textAi).ExtractAsync(ocrDocument, aiSettings, CancellationToken.None);
+var oversized = document with { Attachments = [new SourceAttachment(source.Url, "large.pdf", "application/pdf", new byte[OcrSpaceClient.MaxFileBytes + 1])] };
+try { await new OcrSpaceClient(fakeOcr).ReadAsync(oversized, ocrSettings, CancellationToken.None); throw new Exception("Archivo grande aceptado"); }
+catch (InvalidOperationException) { Check(ocrCalls == 2, "Archivos grandes se rechazan antes de cualquier llamada OCR"); }
+foreach (var result in new[] { OcrResult(2), OcrResult(1, 3) })
+{
+    using var badOcr = new HttpClient(new StubHttpHandler(_ => Task.FromResult(result)));
+    try { await new OcrSpaceClient(badOcr).ReadAsync(document, ocrSettings, CancellationToken.None); throw new Exception("OCR parcial aceptado"); }
+    catch (InvalidOperationException) { Console.WriteLine("OK: OCR parcial o página fallida no genera extracción"); }
+}
+Check(!new CaptureSettings { Enabled = true, ApiKey = "test", Model = "test", Sources = [source], Ocr = new OcrSettings { Enabled = true } }.IsReady,
+    "Sin clave OCR la captación queda deshabilitada");
+
 Check(ExtractedOfferWriter.Key(source, extracted) == ExtractedOfferWriter.Key(source, extracted with { Summary = "Resumen modificado" }),
     "Identificador de extracción estable ante cambio de resumen");
 
@@ -150,9 +190,12 @@ try
         await db.Offers.Where(x => x.ExtractionKey == extractionKey).ExecuteDeleteAsync();
     }
     var coordinatorSource = new CaptureSource { Id = "test-coordinator", Chain = source.Chain, Url = source.Url };
-    var coordinatorSettings = new CaptureSettings { Enabled = true, ApiKey = "test-only-not-a-real-key", Model = "test-model", RenderPages = false, Sources = [coordinatorSource] };
+    var coordinatorSettings = new CaptureSettings { Enabled = true, ApiKey = "test-only-not-a-real-key", Model = "test-model", RenderPages = false, Sources = [coordinatorSource], Ocr = ocrSettings };
     var uncertainResponse = false;
-    using var sourceStub = new HttpClient(new StubHttpHandler(_ => Task.FromResult("<html><body><h1>Oferta de prueba</h1><p>Oferta de prueba 10%: condiciones publicadas para el test.</p></body></html>")));
+    var partialOcr = false;
+    using var coordinatorOcr = new HttpClient(new StubHttpHandler(_ => Task.FromResult(OcrResult(partialOcr ? 2 : 1))));
+    using var sourceStub = new HttpClient(new StubHttpHandler(request => Task.FromResult(request.RequestUri!.AbsolutePath.EndsWith(".pdf")
+        ? "%PDF-test" : "<html><body><h1>Oferta de prueba</h1><a href=\"terms.pdf\">Condiciones</a><p>Oferta de prueba 10%</p></body></html>")));
     using var aiStub = new HttpClient(new StubHttpHandler(_ => Task.FromResult(JsonSerializer.Serialize(new {
         status = "completed", output = new[] { new { type = "message", content = new[] { new {
             type = "output_text", text = JsonSerializer.Serialize(new ExtractionResult(uncertainResponse, [extracted]), serializer) } } } }
@@ -163,6 +206,7 @@ try
     services.AddScoped<ExtractedOfferWriter>();
     services.AddScoped(_ => new SourceReader(sourceStub, coordinatorSettings));
     services.AddScoped(_ => new OpenAiOfferExtractor(aiStub));
+    services.AddScoped(_ => new OcrSpaceClient(coordinatorOcr));
     await using var provider = services.BuildServiceProvider();
     var coordinator = new CaptureCoordinator(provider.GetRequiredService<IServiceScopeFactory>(), coordinatorSettings, NullLogger<CaptureCoordinator>.Instance);
     try
@@ -172,6 +216,9 @@ try
         uncertainResponse = true;
         var failed = await coordinator.RunAsync(coordinatorSource.Id, CancellationToken.None);
         Check(failed.Single().Status == "Failed" && failed.Single().Stage == "ValidateAndSave", "Extracción incierta queda registrada como fallo");
+        partialOcr = true;
+        var ocrFailed = await coordinator.RunAsync(coordinatorSource.Id, CancellationToken.None);
+        Check(ocrFailed.Single().Status == "Failed" && ocrFailed.Single().Stage == "OCR", "Fallo OCR queda registrado antes de invocar IA");
         Check(await db.Offers.CountAsync(x => x.CaptureSourceId == coordinatorSource.Id) == 1, "Fallo de lectura no elimina ni duplica oferta existente");
     }
     finally
