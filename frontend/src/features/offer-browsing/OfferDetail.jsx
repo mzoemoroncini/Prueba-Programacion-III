@@ -1,4 +1,5 @@
 import React from 'react';
+import OfferReportForm from './OfferReportForm.jsx';
 
 const missing = 'No informado por la fuente';
 const benefitNames = {
@@ -14,7 +15,7 @@ const safeSource = value => {
   catch { return null; }
 };
 
-export default function OfferDetail({ offer }) {
+export default function OfferDetail({ offer, administrative = false }) {
   const source = safeSource(offer.sourceUrl);
   return <article className="detail">
         <p className="brand">{offer.chain}</p><h2>{offer.summary || missing}</h2>
@@ -34,6 +35,9 @@ export default function OfferDetail({ offer }) {
         <h3>Código de descuento</h3>
         {offer.codeStatus === 'Available' && offer.code ? <code className="code">{offer.code}</code>
           : <p>{offer.codeStatus === 'NotRequired' ? 'Esta oferta no incluye código' : missing}</p>}
-        {source ? <a className="source" href={source} target="_blank" rel="noopener noreferrer">Ver oferta en origen ↗</a> : <p>El enlace de origen no está disponible.</p>}
+        {source ? <a className="source" href={source} target="_blank" rel="noopener noreferrer" onClick={() => {
+          if (!administrative) fetch(`/api/offers/${offer.id}/source-access`, { method: 'POST', keepalive: true }).catch(() => {});
+        }}>Ver oferta en origen ↗</a> : <p>El enlace de origen no está disponible.</p>}
+        {!administrative && <OfferReportForm key={offer.id} offerId={offer.id} />}
       </article>;
 }

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Offers.Api.Features.OfferReports;
 
 namespace Offers.Api.Features.OfferPublication;
 
@@ -7,8 +8,26 @@ public sealed class OffersDbContext(DbContextOptions<OffersDbContext> options) :
     public DbSet<Offer> Offers => Set<Offer>();
     public DbSet<OfferBenefit> OfferBenefits => Set<OfferBenefit>();
 
+    public DbSet<OfferReport> Reports => Set<OfferReport>();
+    public DbSet<OfferInteraction> Interactions => Set<OfferInteraction>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        var report = modelBuilder.Entity<OfferReport>();
+        report.ToTable("OfferReports"); report.HasKey(x => x.Id);
+        report.Property(x => x.Id).HasColumnType("char(36)");
+        report.Property(x => x.OfferId).HasColumnType("char(36)");
+        report.Property(x => x.Reason).HasMaxLength(30);
+        report.Property(x => x.Comment).HasMaxLength(2000);
+        report.Property(x => x.CreatedAt).HasColumnType("datetime(6)");
+        report.HasOne<Offer>().WithMany().HasForeignKey(x => x.OfferId).OnDelete(DeleteBehavior.Cascade);
+        var interaction = modelBuilder.Entity<OfferInteraction>();
+        interaction.ToTable("OfferInteractions"); interaction.HasKey(x => x.Id);
+        interaction.Property(x => x.Id).HasColumnType("char(36)");
+        interaction.Property(x => x.OfferId).HasColumnType("char(36)");
+        interaction.Property(x => x.Action).HasMaxLength(30);
+        interaction.Property(x => x.CreatedAt).HasColumnType("datetime(6)");
+        interaction.HasOne<Offer>().WithMany().HasForeignKey(x => x.OfferId).OnDelete(DeleteBehavior.Cascade);
         var offer = modelBuilder.Entity<Offer>();
         offer.ToTable("Offers");
         offer.HasKey(x => x.Id);

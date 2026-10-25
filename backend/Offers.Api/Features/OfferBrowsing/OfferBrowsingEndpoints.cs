@@ -1,4 +1,5 @@
 using System.Data.Common;
+using Offers.Api.Features.OfferReports;
 using Microsoft.EntityFrameworkCore;
 using Offers.Api.Features.OfferPublication;
 
@@ -41,6 +42,8 @@ public static class OfferBrowsingEndpoints
                     .Include(x => x.Benefits)
                     .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
                 if (offer is null) return Results.NotFound();
+                db.Interactions.Add(new OfferInteraction { OfferId = id, Action = "PublicView" });
+                await db.SaveChangesAsync(cancellationToken);
                 return Results.Ok(ToDetailDto(offer));
             }
             catch (DbException)

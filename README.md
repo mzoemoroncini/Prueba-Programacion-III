@@ -51,7 +51,7 @@ Las carpetas de features reservan los cinco flujos acordados: captación, public
 
 ## Pendiente
 
-El modelo de ofertas, el contexto EF Core y la migración InitialOffers están preparados. La migración se aplicó a una instancia MySQL 8.4.11 local de desarrollo en este entorno. Reportes y métricas de uso siguen pendientes. La integración IA está implementada, pero no está activada ni validada con un proveedor real.
+El modelo de ofertas, el contexto EF Core y la migración InitialOffers están preparados. La migración se aplicó a una instancia MySQL 8.4.11 local de desarrollo en este entorno. Reportes y medición básica de consultas/accesos implementados (HU28–HU33). La integración IA está implementada, pero no está activada ni validada con un proveedor real.
 
 Consultar `CONVENTIONS.md` antes de agregar funcionalidades.
 
@@ -110,7 +110,7 @@ dotnet run --project backend/Offers.Checks
 
 Sin configuración ejecuta los checks de estado, límites de vigencia y fecha argentina. Para probar MySQL y HTTP, configurar `ConnectionStrings__Offers` y `OFFERS_CHECKS_API_URL` apuntando a una API activa con la misma base. Ejecutar solo contra una base de desarrollo: crea ofertas de prueba temporales y las elimina al finalizar.
 
-Se verificaron las reglas, la lectura de varios beneficios y decimales, códigos, fechas y la exclusión del detalle para ofertas no disponibles contra MySQL real. La extracción real con IA requiere configurar una clave y un modelo y validar sus resultados. Reportes y métricas de consultas/clics siguen pendientes.
+Se verificaron las reglas, la lectura de varios beneficios y decimales, códigos, fechas y la exclusión del detalle para ofertas no disponibles contra MySQL real. La extracción real con IA requiere configurar una clave y un modelo y validar sus resultados. Reportes y medición básica de consultas/clics implementados (HU28–HU33).
 
 ## Administración de publicaciones
 
@@ -248,3 +248,36 @@ docker build -t ofertas-ia .
 ```
 
 La construcción de Docker y el despliegue remoto requieren sus respectivos entornos. No se consideran verificados solo por compilar React y C# por separado. Consultar los créditos y costos de la cuenta Railway antes de habilitar servicios pagos; no se configura un plan pago automáticamente.
+
+
+## Reportes y medición básica (HU28–HU33)
+
+En el detalle público se puede reportar **Oferta vencida** o **Datos incorrectos**, sin registrarse y con comentario opcional de hasta 2000 caracteres. Se confirma el envío; un reporte no cambia automáticamente el estado de la oferta. Administración muestra los últimos 200 reportes, permite abrir la oferta asociada y conserva la consulta aunque se desactive.
+
+Cada detalle público disponible registra `PublicView` con oferta y fecha UTC. El listado, los detalles fallidos y las consultas administrativas no cuentan como aperturas públicas. Activar el enlace de origen envía `SourceAccess` sin bloquear su apertura; representa un clic, no una carga confirmada ni un canje. El envío del clic es de mejor esfuerzo y puede perderse sin conexión. No se identifica al consumidor ni se agrega un panel estadístico avanzado.
+
+`AddReportsAndInteractions` agrega las tablas OfferReports y OfferInteractions al contexto de publicaciones. Aplicar todas las migraciones antes de ejecutar esta versión. Las nuevas pruebas HTTP/MySQL verifican motivos, comentarios, permisos, persistencia, métricas y conservación del estado de publicación.
+
+## Configuración local reproducible
+
+Requisitos: SDK .NET 10, Node compatible con Vite 7, Python 3 y Docker con Compose. Desde la raíz:
+
+```sh
+python scripts/dev.py setup
+npm --prefix frontend ci
+dotnet restore DescuentosIA.sln
+python scripts/dev.py migrate
+```
+
+El helper inicia MySQL en el puerto 3307 y conserva sus datos en `.local/mysql`. Genera credenciales aleatorias en `.local/settings.json` y `.local/mysql.env`, ignorados por Git; no los compartas. Repetir setup conserva la configuración y verifica una consulta autenticada antes de declarar MySQL disponible. No recrea bases existentes.
+
+En dos terminales:
+
+```sh
+python scripts/dev.py api
+python scripts/dev.py frontend
+```
+
+Estos comandos se ejecutan por separado: API en el puerto **5001** y Vite en el **5175**, con el proxy configurado automáticamente. La captación permanece deshabilitada hasta configurar sus requisitos reales. El perfil de Visual Studio conserva su puerto 5000 y las instrucciones de User Secrets de las secciones anteriores; no carga automáticamente los archivos privados del helper. Para F5, configurar los mismos valores locales mediante Administrar secretos de usuario.
+
+Con los servicios activos, `python scripts/dev.py checks` ejecuta reglas, contratos y pruebas HTTP/MySQL contra esta base de desarrollo y limpia sus fixtures. `python scripts/dev.py build` compila la solución y React. No ejecutar las pruebas de integración contra producción.

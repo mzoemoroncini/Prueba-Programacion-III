@@ -28,13 +28,14 @@ export default function AdminPanel() {
   const [busy, setBusy] = useState(false);
   const [capture, setCapture] = useState(null);
   const [runs, setRuns] = useState([]);
+  const [reports, setReports] = useState([]);
   async function checkSession() {
     setAuth('checking'); setMessage('');
     try { await request('/api/admin/session'); setAuth('signed-in'); }
     catch (error) { setAuth(error.status === 401 ? 'anonymous' : 'error'); if (error.status !== 401) setMessage(error.message); }
   }
   useEffect(() => { checkSession(); }, []);
-  useEffect(() => { if (auth === 'signed-in') { loadOffers(); loadCapture(); } }, [auth]);
+  useEffect(() => { if (auth === 'signed-in') { loadOffers(); loadCapture(); loadReports(); } }, [auth]);
   function handleError(error) {
     setMessage(error.message);
     if (error.status === 401) { setAuth('anonymous'); setOffers(null); setSelected(null); }
@@ -53,6 +54,9 @@ export default function AdminPanel() {
       if (offerId) setSelected(await request(`/api/admin/offers/${offerId}`));
       setMessage(result.some(run => run.status === 'Failed') ? 'La lectura terminó con errores. Revisá el registro.' : 'Lectura completada. Las ofertas nuevas quedan pendientes de revisión.');
     } catch (error) { handleError(error); } finally { setBusy(false); }
+  }
+  async function loadReports() {
+    try { setReports(await request('/api/admin/reports')); } catch (error) { handleError(error); }
   }
   async function loadOffers() {
     setOffers(null);
@@ -107,8 +111,15 @@ export default function AdminPanel() {
         <strong>{chains[offer.chain] || 'Cadena no informada'}</strong><span>{offer.summary || 'No informado por la fuente'}</span><span>{states[offer.status]}</span>
         {!offer.endsOn && <small>Sin vencimiento informado: requiere revisión</small>}
       </button></li>)}</ul>}
+      <section className="notice" aria-label="Reportes recibidos"><h2>Reportes recibidos</h2><button disabled={busy} onClick={loadReports}>Actualizar reportes</button>
+        {reports.length === 0 ? <p>No hay reportes recibidos.</p> : <ul>{reports.map(report => <li key={report.id}>
+          <button className="back" onClick={() => openOffer(report.offerId)}>{report.summary || report.offerId}</button>
+          <p>{report.reason === 'Expired' ? 'Oferta vencida' : 'Datos incorrectos'} · {new Date(report.createdAt + 'Z').toLocaleString('es-AR')}</p>
+          {report.comment && <p className="preserve">{report.comment}</p>}
+        </li>)}</ul>}
+      </section>
       {selected && <section aria-label="Revisión de la oferta">
-        <p>Estado: <strong>{states[selected.status]}</strong></p><OfferDetail offer={selected.detail} />
+        <p>Estado: <strong>{states[selected.status]}</strong></p><OfferDetail offer={selected.detail} administrative />
         <div className="admin-actions">
           {selected.captureSourceId && <button disabled={busy || !capture?.configured} onClick={() => readSource(selected.detail.id)}>Volver a leer la fuente</button>}
           {selected.status !== 'Published' && <button disabled={busy} onClick={() => changeStatus('publish')}>Publicar oferta</button>}

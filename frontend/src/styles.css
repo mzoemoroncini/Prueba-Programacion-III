@@ -37,3 +37,7 @@ button:disabled { opacity: .6; cursor: wait; }
 .offer-row { width: 100%; text-align: left; background: white; color: #252a2b; border: 1px solid #deded5; display: grid; gap: 8px; overflow-wrap: anywhere; }
 .offer-row:hover { background: #eaf1eb; }
 .danger { background: #97372e; }
+
+.report-form { display: grid; gap: 16px; }
+.report-form label { display: grid; gap: 8px; }
+select, textarea { font: inherit; width: 100%; padding: 12px; border: 1px solid #8c9690; border-radius: 6px; }
