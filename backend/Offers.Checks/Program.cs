@@ -218,6 +218,22 @@ try
         var result = await client.GetFromJsonAsync<OfferDetailDto>("/api/offers/" + offer.Id);
         Check(result is not null && result.Code == null && result.CodeStatus == offer.CodeStatus.ToString(), "Código ausente o incierto no expone texto residual");
     }
+    Check(await db.Interactions.CountAsync(x => x.OfferId == visible.Id && x.Action == "PublicView") == 1, "Detalle público registra una consulta sin contar el listado");
+    foreach (var hiddenOffer in hidden)
+        Check(!await db.Interactions.AnyAsync(x => x.OfferId == hiddenOffer.Id), "Detalle fallido no genera consultas");
+    Check(!await db.Interactions.AnyAsync(x => x.OfferId == visible.Id && x.Action == "SourceAccess"), "Abrir detalle no registra acceso al origen");
+    Check((await client.PostAsync($"/api/offers/{visible.Id}/source-access", null)).StatusCode == HttpStatusCode.NoContent, "Activación del origen registrada");
+    Check(await db.Interactions.CountAsync(x => x.OfferId == visible.Id && x.Action == "SourceAccess") == 1, "Un acceso conserva oferta y fecha");
+    Check((await client.GetAsync("/api/admin/reports")).StatusCode == HttpStatusCode.Unauthorized, "Reportes requieren sesión administrativa");
+    Check((await client.PostAsJsonAsync($"/api/offers/{visible.Id}/reports", new { reason = "invalid" })).StatusCode == HttpStatusCode.BadRequest, "Reporte exige motivo válido");
+    Check((await client.PostAsJsonAsync($"/api/offers/{visible.Id}/reports", new { reason = "Expired", comment = new string('x', 2001) })).StatusCode == HttpStatusCode.BadRequest, "Comentario extenso rechazado");
+    Check(!await db.Reports.AnyAsync(x => x.OfferId == visible.Id), "Envíos fallidos no cuentan como reportes");
+    Check((await client.PostAsJsonAsync($"/api/offers/{visible.Id}/reports", new { reason = "Expired" })).StatusCode == HttpStatusCode.Created, "Reporte anónimo sin comentario aceptado");
+    Check((await client.PostAsJsonAsync($"/api/offers/{visible.Id}/reports", new { reason = "IncorrectData", comment = " El precio difiere " })).StatusCode == HttpStatusCode.Created, "Reporte con comentario aceptado");
+    var feedback = await db.Reports.Where(x => x.OfferId == visible.Id).ToListAsync();
+    Check(feedback.Count == 2 && feedback.Any(x => x.Comment == null) && feedback.Any(x => x.Comment == "El precio difiere") && feedback.All(x => x.CreatedAt != default), "Un registro por envío conserva motivo, comentario y fecha");
+    Check((await db.Offers.AsNoTracking().SingleAsync(x => x.Id == visible.Id)).Status == OfferStatus.Published, "Reportar no desactiva ofertas");
+    Check((await client.PostAsJsonAsync($"/api/offers/{hidden[0].Id}/reports", new { reason = "Expired" })).StatusCode == HttpStatusCode.NotFound, "Reporte no expone ofertas ocultas");
     var writer = new ExtractedOfferWriter(db);
     var extractionKey = ExtractedOfferWriter.Key(source, extracted);
     try
@@ -312,6 +328,12 @@ try
         Check((await admin.GetAsync("/api/admin/capture/status")).StatusCode == HttpStatusCode.OK, "Administrador consulta configuración de lectura sin secretos");
         Check((await admin.GetAsync("/api/admin/capture/runs")).StatusCode == HttpStatusCode.OK, "Administrador consulta registro de lecturas");
         Check((await PostAdmin("/api/admin/capture/run")).StatusCode == HttpStatusCode.Conflict, "Lectura sin clave o habilitación no se ejecuta");
+        visible.Status = OfferStatus.Disabled; await db.SaveChangesAsync();
+        var reportResponse = await admin.GetFromJsonAsync<JsonElement>($"/api/admin/reports?offerId={visible.Id}");
+        Check(reportResponse.GetArrayLength() == 2 && reportResponse[0].GetProperty("offerId").GetGuid() == visible.Id, "Reportes siguen disponibles al desactivar una oferta");
+        var beforeAdmin = await db.Interactions.CountAsync(x => x.OfferId == visible.Id);
+        Check((await admin.GetAsync($"/api/admin/offers/{visible.Id}")).StatusCode == HttpStatusCode.OK, "Administrador abre oferta reportada");
+        Check(await db.Interactions.CountAsync(x => x.OfferId == visible.Id) == beforeAdmin, "Consulta administrativa no cuenta como pública");
         var pending = hidden[0];
         Check((await admin.GetAsync("/api/admin/offers/" + pending.Id)).StatusCode == HttpStatusCode.OK, "Administrador puede revisar ofertas pendientes");
         Check((await admin.PostAsync("/api/admin/offers/" + pending.Id + "/publish", null)).StatusCode == HttpStatusCode.BadRequest,

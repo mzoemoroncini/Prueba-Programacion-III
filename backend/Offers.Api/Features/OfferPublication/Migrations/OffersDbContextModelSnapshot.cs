@@ -145,10 +145,80 @@ namespace Offers.Api.Features.OfferPublication.Migrations
                     b.ToTable("OfferBenefits", (string)null);
                 });
 
+            modelBuilder.Entity("Offers.Api.Features.OfferReports.OfferInteraction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("varchar(30)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("OfferId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OfferId");
+
+                    b.ToTable("OfferInteractions", (string)null);
+                });
+
+            modelBuilder.Entity("Offers.Api.Features.OfferReports.OfferReport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar(2000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("OfferId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("varchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OfferId");
+
+                    b.ToTable("OfferReports", (string)null);
+                });
+
             modelBuilder.Entity("Offers.Api.Features.OfferPublication.OfferBenefit", b =>
                 {
                     b.HasOne("Offers.Api.Features.OfferPublication.Offer", null)
                         .WithMany("Benefits")
+                        .HasForeignKey("OfferId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Offers.Api.Features.OfferReports.OfferInteraction", b =>
+                {
+                    b.HasOne("Offers.Api.Features.OfferPublication.Offer", null)
+                        .WithMany()
+                        .HasForeignKey("OfferId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Offers.Api.Features.OfferReports.OfferReport", b =>
+                {
+                    b.HasOne("Offers.Api.Features.OfferPublication.Offer", null)
+                        .WithMany()
                         .HasForeignKey("OfferId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Offers.Api.Features.OfferReports;
+using System.Threading.RateLimiting;
 using Offers.Api.Features.OfferBrowsing;
 using Offers.Api.Features.OfferCapture;
 using Offers.Api.Features.SourceReprocessing;
@@ -6,6 +8,11 @@ using Offers.Api.Features.OfferPublication;
 
 var builder = WebApplication.CreateBuilder(args.Where(x => x != "--migrate").ToArray());
 builder.Services.AddProblemDetails();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = 429;
+    options.AddPolicy("feedback", http => RateLimitPartition.GetFixedWindowLimiter(http.Connection.RemoteIpAddress?.ToString() ?? "local", _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+});
 builder.AddAdminAccess();
 var captureSettings = new CaptureSettings();
 builder.Configuration.GetSection("Capture").Bind(captureSettings);
@@ -45,9 +52,11 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.MapAdminAccess();
 app.MapAdminOffers();
 app.MapOfferBrowsing();
+app.MapOfferFeedback();
 app.MapCapture();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapFallback("/api/{**path}", () => Results.NotFound());
