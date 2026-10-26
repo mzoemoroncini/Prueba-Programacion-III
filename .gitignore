@@ -1,0 +1,37 @@
+node_modules/
+.tools/
+dist/
+bin/
+obj/
+.env
+.env.*
+!.env.example
+.local/
+
+__pycache__/
+*.pyc
+
+.vs/
+*.user
+*.suo
+
+# Registros, resultados de pruebas y temporales
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+TestResults/
+coverage/
+playwright-report/
+test-results/
+
+# Secretos locales, certificados privados y respaldos de datos
+secrets.json
+*.pfx
+*.p12
+*.key
+*.sql.gz
+*.dump

@@ -1,0 +1,8 @@
+-- Ejecutar como administrador de MySQL 8 en MySQL Workbench.
+-- Elegir una contraseña propia y privada antes de ejecutar. No guardar la versión con contraseña en Git.
+CREATE DATABASE IF NOT EXISTS offers CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+CREATE USER IF NOT EXISTS 'offers_app'@'localhost' IDENTIFIED BY 'REEMPLAZAR_POR_UNA_CONTRASENA_PRIVADA';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES, DROP
+    ON offers.* TO 'offers_app'@'localhost';
+-- Estos permisos permiten aplicar migraciones sobre esta base, no administrar otras bases.
+-- Si el usuario ya existía, CREATE USER IF NOT EXISTS no cambia su contraseña.
